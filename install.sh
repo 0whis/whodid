@@ -53,17 +53,35 @@ MISSING=()
 command -v gcc  &>/dev/null || MISSING+=(gcc)
 command -v make &>/dev/null || MISSING+=(make)
 
+# Standard C headers (e.g. ctype.h) are provided by libc6-dev / glibc-devel,
+# which gcc does not pull in automatically when installed with --no-install-recommends.
+[[ -f /usr/include/ctype.h ]] || MISSING+=(__libc_dev__)
+
 if [[ "${#MISSING[@]}" -gt 0 ]]; then
-    yellow "  Installing: ${MISSING[*]}"
+    # Resolve the distro-specific name for the C headers package.
+    APT_PKGS=()
+    YUM_PKGS=()
+    for pkg in "${MISSING[@]}"; do
+        if [[ "${pkg}" == "__libc_dev__" ]]; then
+            APT_PKGS+=(libc6-dev)
+            YUM_PKGS+=(glibc-devel)
+        else
+            APT_PKGS+=("${pkg}")
+            YUM_PKGS+=("${pkg}")
+        fi
+    done
+
+    DISPLAY_PKGS=("${MISSING[@]//__libc_dev__/libc6-dev}")
+    yellow "  Installing: ${DISPLAY_PKGS[*]}"
     if command -v apt-get &>/dev/null; then
         apt-get update -qq
-        apt-get install -y --no-install-recommends "${MISSING[@]}"
-    elif command -v yum &>/dev/null; then
-        yum install -y "${MISSING[@]}"
+        apt-get install -y --no-install-recommends "${APT_PKGS[@]}"
     elif command -v dnf &>/dev/null; then
-        dnf install -y "${MISSING[@]}"
+        dnf install -y "${YUM_PKGS[@]}"
+    elif command -v yum &>/dev/null; then
+        yum install -y "${YUM_PKGS[@]}"
     else
-        die "Cannot install ${MISSING[*]} — please install them manually."
+        die "Cannot install ${DISPLAY_PKGS[*]} — please install them manually."
     fi
 fi
 green "  Dependencies satisfied."
