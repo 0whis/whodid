@@ -75,6 +75,12 @@
 # define FAN_MARK_FILESYSTEM 0x00000100U
 #endif
 
+/* MAX_HANDLE_SZ is defined in <fcntl.h> (glibc 2.14+, value=128).
+ * Provide a fallback for older environments. */
+#ifndef MAX_HANDLE_SZ
+# define MAX_HANDLE_SZ 128
+#endif
+
 #ifndef FAN_EVENT_INFO_TYPE_FID
 # define FAN_EVENT_INFO_TYPE_FID       1
 # define FAN_EVENT_INFO_TYPE_DFID_NAME 2
@@ -196,7 +202,9 @@ static int get_process_name(pid_t pid, char *buf, size_t len)
     snprintf(proc_path, sizeof(proc_path), "/proc/%d/comm", (int)pid);
     f = fopen(proc_path, "r");
     if (f) {
-        if (fgets(buf, (int)len, f)) {
+        /* fgets takes int; clamp to INT_MAX for safety */
+        int read_limit = (len > (size_t)INT_MAX) ? INT_MAX : (int)len;
+        if (fgets(buf, read_limit, f)) {
             buf[strcspn(buf, "\n")] = '\0';
             sanitize_str(buf, len);
             fclose(f);
@@ -327,8 +335,9 @@ static void print_event(pid_t pid, uint64_t mask, const char *filepath)
  * ---------------------------------------------------------------------- */
 static void process_event_modern(struct fanotify_event_metadata *meta)
 {
-    /* PATH_MAX + NAME_MAX + 2 accommodates dir_path + '/' + name safely */
-    char path[PATH_MAX + NAME_MAX + 2];
+    /* Static: avoids putting 4 KB+ on the stack; process_event_modern is
+     * called from a single-threaded event loop, so this is safe. */
+    static char path[PATH_MAX + NAME_MAX + 2];
     struct fanotify_event_info_header *info_hdr;
     char  *info_ptr;
     size_t info_remaining;
