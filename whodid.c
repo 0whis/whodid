@@ -313,14 +313,14 @@ static void print_event(pid_t pid, uint64_t mask, const char *filepath)
 
     if (g_use_color) {
         const char *ac = get_action_color(mask);
-        printf("%s%s%s | PID: %s%-7d%s| PROCESS: %s%-45s%s| ACTION: %s%-10s%s| FILE: %s\n",
+        printf("%s%s%s | %s%-7d%s| %s%-45s%s| %s%-10s%s| %s\n",
                C_CYAN,   timestamp, C_RESET,
                C_YELLOW, (int)pid,  C_RESET,
                C_BOLD,   procname,  C_RESET,
                ac,       action,    C_RESET,
                filepath);
     } else {
-        printf("%s | PID: %-7d| PROCESS: %-45s| ACTION: %-10s| FILE: %s\n",
+        printf("%s | %-7d| %-45s| %-10s| %s\n",
                timestamp, (int)pid, procname, action, filepath);
     }
     fflush(stdout);
