@@ -25,6 +25,7 @@
 #include <getopt.h>
 #include <limits.h>
 #include <poll.h>
+#include <pwd.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -109,6 +110,7 @@ struct fanotify_event_info_fid {
 #define WHODID_VERSION    "1.0.0"
 #define EVENT_BUF_SIZE    (64 * 1024)   /* bytes read per poll wake-up   */
 #define PROC_NAME_MAX     256           /* truncation length for process  */
+#define USER_NAME_MAX     64            /* truncation length for username */
 
 /* -------------------------------------------------------------------------
  * ANSI terminal colour helpers (only emitted when g_use_color is set)
@@ -219,6 +221,49 @@ static int get_process_name(pid_t pid, char *buf, size_t len)
     return -1;
 }
 
+/*
+ * get_username_for_pid – resolve the OS username for the real UID of a process.
+ * Reads /proc/<pid>/status to obtain the real UID, then looks it up with
+ * getpwuid_r(3).  Falls back to "uid:<n>" when the name cannot be resolved.
+ */
+static void get_username_for_pid(pid_t pid, char *buf, size_t len)
+{
+    char status_path[128];
+    FILE *f;
+    char line[256];
+    uid_t uid = (uid_t)-1;
+
+    snprintf(status_path, sizeof(status_path), "/proc/%d/status", (int)pid);
+    f = fopen(status_path, "r");
+    if (f) {
+        while (fgets(line, sizeof(line), f)) {
+            unsigned int ruid, euid, suid, fsuid;
+            if (sscanf(line, "Uid: %u %u %u %u",
+                       &ruid, &euid, &suid, &fsuid) == 4) {
+                uid = (uid_t)ruid;
+                break;
+            }
+        }
+        fclose(f);
+    }
+
+    if (uid != (uid_t)-1) {
+        struct passwd  pw_buf;
+        struct passwd *pw_result;
+        char           pw_strbuf[1024];
+
+        if (getpwuid_r(uid, &pw_buf, pw_strbuf, sizeof(pw_strbuf),
+                       &pw_result) == 0 && pw_result != NULL) {
+            snprintf(buf, len, "%s", pw_result->pw_name);
+            sanitize_str(buf, len);
+            return;
+        }
+        snprintf(buf, len, "uid:%u", (unsigned int)uid);
+    } else {
+        snprintf(buf, len, "?");
+    }
+}
+
 static const char *get_action_str(uint64_t mask)
 {
     if (mask & FAN_CREATE)        return "CREATE";
@@ -302,6 +347,7 @@ static void print_event(pid_t pid, uint64_t mask, const char *filepath)
 {
     char timestamp[16];
     char procname[PROC_NAME_MAX];
+    char username[USER_NAME_MAX];
     const char *action;
 
     if (!g_show_self && pid == getpid()) return;
@@ -309,25 +355,27 @@ static void print_event(pid_t pid, uint64_t mask, const char *filepath)
 
     get_timestamp(timestamp, sizeof(timestamp));
     get_process_name(pid, procname, sizeof(procname));
+    get_username_for_pid(pid, username, sizeof(username));
     action = get_action_str(mask);
 
     g_event_count++;
 
     if (g_use_syslog)
-        syslog(LOG_INFO, "action=%s pid=%d process=%s file=%s",
-               action, (int)pid, procname, filepath);
+        syslog(LOG_INFO, "action=%s pid=%d user=%s process=%s file=%s",
+               action, (int)pid, username, procname, filepath);
 
     if (g_use_color) {
         const char *ac = get_action_color(mask);
-        printf("%s%s%s | %s%-7d%s| %s%-45s%s| %s%-10s%s| %s\n",
+        printf("%s%-8s%s │ %s%-7d%s │ %s%-12s%s │ %s%-45s%s │ %s%-10s%s │ %s\n",
                C_CYAN,   timestamp, C_RESET,
                C_YELLOW, (int)pid,  C_RESET,
+               C_CYAN,   username,  C_RESET,
                C_BOLD,   procname,  C_RESET,
                ac,       action,    C_RESET,
                filepath);
     } else {
-        printf("%s | %-7d| %-45s| %-10s| %s\n",
-               timestamp, (int)pid, procname, action, filepath);
+        printf("%-8s │ %-7d │ %-12s │ %-45s │ %-10s │ %s\n",
+               timestamp, (int)pid, username, procname, action, filepath);
     }
     fflush(stdout);
 }
@@ -528,13 +576,14 @@ static void print_banner(const char *path, int modern)
         printf("  %s►%s Events   : %s\n", C_BCYAN, C_RESET, events_str);
         printf("  %s►%s Syslog   : %s\n", C_BCYAN, C_RESET, syslog_str);
         printf("  %s►%s Stop     : Ctrl-C%s\n\n", C_BCYAN, C_RESET, C_RESET);
-        printf("  %s%-8s │ %-7s │ %-45s│ %-10s│ %s%s\n",
+        printf("%s%-8s │ %-7s │ %-12s │ %-45s │ %-10s │ %s%s\n",
                C_DIM,
-               "TIME", "PID", "PROCESS", "ACTION", "FILE",
+               "TIME", "PID", "USER", "PROCESS", "ACTION", "FILE",
                C_RESET);
-        printf("  %s%.8s─┼─%.7s─┼─%.45s┼─%.10s┼─%.4s%s\n",
+        printf("%s%.8s─┼─%.7s─┼─%.12s─┼─%.45s─┼─%.10s─┼─%.4s%s\n",
                C_DIM,
-               "─────────", "────────", "──────────────────────────────────────────────",
+               "─────────", "────────", "─────────────",
+               "──────────────────────────────────────────────",
                "───────────", "────",
                C_RESET);
         printf("\n");
@@ -545,10 +594,12 @@ static void print_banner(const char *path, int modern)
         printf("Events   : %s\n", events_str);
         printf("Syslog   : %s\n", syslog_str);
         printf("Stop     : Ctrl-C\n\n");
-        printf("%-8s | %-7s | %-45s| %-10s| FILE\n",
-               "TIME", "PID", "PROCESS", "ACTION");
-        printf("%.80s\n", "──────────────────────────────────────────────────"
-                          "──────────────────────────────");
+        printf("%-8s │ %-7s │ %-12s │ %-45s │ %-10s │ FILE\n",
+               "TIME", "PID", "USER", "PROCESS", "ACTION");
+        printf("%.8s─┼─%.7s─┼─%.12s─┼─%.45s─┼─%.10s─┼─%.4s\n",
+               "─────────", "────────", "─────────────",
+               "──────────────────────────────────────────────",
+               "───────────", "────");
     }
     fflush(stdout);
 }
