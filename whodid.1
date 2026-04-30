@@ -44,6 +44,25 @@ or with the
 .B CAP_SYS_ADMIN
 capability, which is required by
 .BR fanotify_init (2).
+Immediately after all privileged setup is complete,
+.B whodid
+drops elevated privileges:
+the real, effective, and saved UIDs/GIDs are changed to the invoking
+user's IDs (from
+.B SUDO_UID
+/
+.BR SUDO_GID ),
+or to
+.B nobody
+(uid/gid 65534) when no invoking user can be determined.
+In modern mode,
+.B CAP_DAC_READ_SEARCH
+is retained for
+.BR open_by_handle_at (2);
+all other capabilities are relinquished.
+.BR PR_SET_NO_NEW_PRIVS
+is set to prevent privilege re-acquisition via
+.BR execve (2).
 .PP
 .SS Operating modes
 .TP
@@ -221,6 +240,17 @@ sudo whodid /etc/cron.d/ &
 sudo whodid /etc/systemd/system/ &
 .EE
 .TP
+Incident response: record events to the system journal and query for deletes:
+.EX
+sudo whodid \-\-syslog /etc/
+journalctl \-t whodid \-\-since today | grep action=DELETE
+.EE
+.TP
+Filter syslog output for non-root actors modifying a path:
+.EX
+grep 'whodid' /var/log/syslog | grep \-v 'user=root'
+.EE
+.TP
 Print version and exit:
 .EX
 whodid \-\-version
@@ -259,6 +289,15 @@ from Windows PowerShell to obtain a kernel \(>= 5.1 before using
 .BR whodid .
 WSL1 is not supported.
 .IP \(bu 3
+Privileges are dropped immediately after fanotify setup.
+In modern mode,
+.B CAP_DAC_READ_SEARCH
+is retained for file-handle resolution via
+.BR open_by_handle_at (2).
+In basic mode all extra capabilities are dropped entirely.
+.B PR_SET_NO_NEW_PRIVS
+is set unconditionally to prevent privilege re-escalation.
+.IP \(bu 3
 The binary is compiled with
 .BR \-fstack\-protector\-strong ,
 .BR \-D_FORTIFY_SOURCE=2 ,
@@ -284,6 +323,8 @@ Used to resolve directory file handles to absolute paths in modern mode.
 .BR fanotify (7),
 .BR fanotify_init (2),
 .BR fanotify_mark (2),
+.BR open_by_handle_at (2),
+.BR prctl (2),
 .BR inotifywait (1),
 .BR inotifywatch (1),
 .BR auditd (8),
