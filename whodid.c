@@ -178,24 +178,29 @@ static void handle_signal(int sig)
  * ---------------------------------------------------------------------- */
 static int drop_privileges(int modern_mode)
 {
-    uid_t target_uid = 65534;   /* nobody — safe default */
-    gid_t target_gid = 65534;
+    uid_t unprivileged_uid = 65534;   /* nobody — safe default */
+    gid_t unprivileged_gid = 65534;
     const char *s;
     char *end;
     unsigned long v;
     struct __user_cap_header_struct hdr;
     struct __user_cap_data_struct   data[2];
+    /* uid_t and gid_t are both unsigned 32-bit on Linux; UINT_MAX (0xffffffff)
+     * is therefore the largest representable value for either type. */
+    const __u32 cap_dac_read_search_mask = (1U << CAP_DAC_READ_SEARCH);
 
-    /* Use the invoking user's IDs when run via sudo, but never use root (0) */
+    /* Use the invoking user's IDs when run via sudo, but never use root (0).
+     * strtoul returns values in [0, ULONG_MAX]; the UINT_MAX upper-bound
+     * check ensures the value fits in uid_t/gid_t (both 32-bit unsigned). */
     if ((s = getenv("SUDO_UID")) != NULL) {
         v = strtoul(s, &end, 10);
         if (*end == '\0' && v > 0 && v <= UINT_MAX)
-            target_uid = (uid_t)v;
+            unprivileged_uid = (uid_t)v;
     }
     if ((s = getenv("SUDO_GID")) != NULL) {
         v = strtoul(s, &end, 10);
         if (*end == '\0' && v > 0 && v <= UINT_MAX)
-            target_gid = (gid_t)v;
+            unprivileged_gid = (gid_t)v;
     }
 
     /* Already not root — nothing to do */
@@ -208,19 +213,22 @@ static int drop_privileges(int modern_mode)
         return -1;
     }
 
-    /* Drop supplementary groups (best-effort; EPERM ignored in some
-     * container environments) */
+    /* Drop supplementary groups.  EPERM is tolerated in rootless container
+     * environments (e.g. Docker with user namespaces) where the process
+     * lacks the privilege to call setgroups(2) even when it appears to be
+     * uid 0 inside the namespace.  In those environments, supplementary
+     * group membership is already restricted by the container runtime. */
     if (setgroups(0, NULL) < 0 && errno != EPERM) {
         perror("whodid: setgroups");
         return -1;
     }
 
     /* Drop GID first, then UID (order matters: setresuid clears saved-set) */
-    if (setresgid(target_gid, target_gid, target_gid) < 0) {
+    if (setresgid(unprivileged_gid, unprivileged_gid, unprivileged_gid) < 0) {
         perror("whodid: setresgid");
         return -1;
     }
-    if (setresuid(target_uid, target_uid, target_uid) < 0) {
+    if (setresuid(unprivileged_uid, unprivileged_uid, unprivileged_uid) < 0) {
         perror("whodid: setresuid");
         return -1;
     }
@@ -233,8 +241,8 @@ static int drop_privileges(int modern_mode)
 
     if (modern_mode) {
         /* CAP_DAC_READ_SEARCH is required by open_by_handle_at(2). */
-        data[0].permitted   = (1U << CAP_DAC_READ_SEARCH);
-        data[0].effective   = (1U << CAP_DAC_READ_SEARCH);
+        data[0].permitted   = cap_dac_read_search_mask;
+        data[0].effective   = cap_dac_read_search_mask;
         data[0].inheritable = 0;
     }
     /* data[1] covers capabilities 32-63; all remain zero. */
