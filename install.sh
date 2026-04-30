@@ -9,6 +9,7 @@
 set -euo pipefail
 
 INSTALL_DIR="/usr/local/bin"
+MAN_DIR="/usr/local/share/man/man1"
 BINARY="whodid"
 
 # ---- helpers ---------------------------------------------------------------
@@ -31,6 +32,11 @@ if [[ "${1:-}" == "--uninstall" ]]; then
         green "whodid uninstalled from ${INSTALL_DIR}/${BINARY}"
     else
         yellow "whodid is not installed in ${INSTALL_DIR}"
+    fi
+    if [[ -f "${MAN_DIR}/${BINARY}.1" ]]; then
+        rm -f "${MAN_DIR}/${BINARY}.1"
+        green "man page uninstalled from ${MAN_DIR}/${BINARY}.1"
+        command -v mandb &>/dev/null && mandb -q || true
     fi
     exit 0
 fi
@@ -118,10 +124,21 @@ make clean
 make
 green "  Build successful."
 
-# ---- install ---------------------------------------------------------------
+# ---- install binary --------------------------------------------------------
 echo "► Installing to ${INSTALL_DIR}/${BINARY}..."
 install -m 755 "${BINARY}" "${INSTALL_DIR}/${BINARY}"
 green "  Installed."
+
+# ---- install man page ------------------------------------------------------
+if [[ -f "${SCRIPT_DIR}/${BINARY}.1" ]]; then
+    echo "► Installing man page to ${MAN_DIR}/${BINARY}.1..."
+    install -d "${MAN_DIR}"
+    install -m 644 "${SCRIPT_DIR}/${BINARY}.1" "${MAN_DIR}/${BINARY}.1"
+    command -v mandb &>/dev/null && mandb -q || true
+    green "  Man page installed.  Try: man whodid"
+else
+    yellow "  whodid.1 not found — man page not installed."
+fi
 
 echo ""
 bold "Installation complete!"
