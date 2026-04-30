@@ -36,7 +36,7 @@ if [[ "${1:-}" == "--uninstall" ]]; then
     if [[ -f "${MAN_DIR}/${BINARY}.1" ]]; then
         rm -f "${MAN_DIR}/${BINARY}.1"
         green "man page uninstalled from ${MAN_DIR}/${BINARY}.1"
-        command -v mandb &>/dev/null && mandb -q
+        command -v mandb &>/dev/null && mandb -q || true
     fi
     exit 0
 fi
@@ -134,7 +134,7 @@ if [[ -f "${SCRIPT_DIR}/${BINARY}.1" ]]; then
     echo "► Installing man page to ${MAN_DIR}/${BINARY}.1..."
     install -d "${MAN_DIR}"
     install -m 644 "${SCRIPT_DIR}/${BINARY}.1" "${MAN_DIR}/${BINARY}.1"
-    command -v mandb &>/dev/null && mandb -q
+    command -v mandb &>/dev/null && mandb -q || true
     green "  Man page installed.  Try: man whodid"
 else
     yellow "  whodid.1 not found — man page not installed."
