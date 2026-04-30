@@ -171,6 +171,80 @@ sudo whodid /etc/systemd/system/ &
 
 ---
 
+## Incident Response Examples
+
+### Monitor `/etc/` for unauthorized modifications
+
+The classic incident-response use case — run as soon as a host is suspected
+of being tampered with:
+
+```bash
+# Start monitoring in the foreground
+sudo whodid /etc/
+
+# In a separate terminal, watch the live journal stream
+journalctl -t whodid -f
+```
+
+Sample output when a script silently modifies `sshd_config`:
+
+```
+15:42:07 | 4821    | root         | /tmp/.hidden/installer          | WRITE     | /etc/ssh/sshd_config
+15:42:08 | 4821    | root         | /tmp/.hidden/installer          | ATTRIB    | /etc/ssh/sshd_config
+```
+
+### Hunt for persistence mechanisms
+
+Watch all common drop-zones for new files simultaneously:
+
+```bash
+sudo whodid /etc/cron.d/ &
+sudo whodid /etc/cron.daily/ &
+sudo whodid /etc/systemd/system/ &
+sudo whodid /etc/profile.d/ &
+sudo whodid /etc/ld.so.conf.d/ &
+```
+
+### Record events to a file and query them later
+
+```bash
+# Log everything to a file with no colour or banner
+sudo whodid -q -n --syslog /var/www/ | tee /var/log/whodid-www.log
+
+# Query the system journal for DELETE events from the last hour
+journalctl -t whodid --since "1 hour ago" | grep DELETE
+
+# Search the plain-text log for a specific process
+grep 'nginx' /var/log/whodid-www.log
+
+# Find non-root actors modifying sensitive paths
+grep 'whodid' /var/log/syslog | grep -v 'user=root'
+```
+
+### Filter syslog output for specific patterns
+
+When `--syslog` is active, each event is written in key=value format that is
+easy to parse:
+
+```
+whodid[1234]: action=WRITE pid=9871 user=deploy process=/usr/bin/rsync file=/var/www/html/index.php
+```
+
+Useful one-liners:
+
+```bash
+# All events involving a DELETE action today
+journalctl -t whodid --since today | grep 'action=DELETE'
+
+# All events NOT from a known process
+journalctl -t whodid -f | grep -v 'process=/usr/bin/rsync'
+
+# Alert on any write to /etc/sudoers (requires --syslog to be active)
+journalctl -t whodid -f | grep 'file=/etc/sudoers'
+```
+
+---
+
 ## Output format
 
 ```
@@ -212,8 +286,20 @@ HH:MM:SS | PID     | PROCESS                                       | ACTION     
 
 ## Security notes
 
-* `whodid` must run as **root** (or with `CAP_SYS_ADMIN`).  It performs no
-  network access, spawns no subprocesses, and opens no writable files.
+* `whodid` must be started as **root** (or with `CAP_SYS_ADMIN`) because
+  `fanotify_init(2)` requires that capability.  Immediately after acquiring
+  the fanotify file descriptor and completing all privileged setup, `whodid`
+  drops elevated privileges:
+  * The real, effective, and saved UIDs/GIDs are changed to the invoking
+    user's IDs (taken from `SUDO_UID` / `SUDO_GID`), or to `nobody`
+    (uid/gid 65534) when running as root without `sudo`.
+  * In **modern mode** (kernel ≥ 5.1), `CAP_DAC_READ_SEARCH` is retained
+    because `open_by_handle_at(2)` requires it.  All other capabilities are
+    dropped.
+  * In **basic mode** (kernel < 5.1), all extra capabilities are dropped
+    entirely.
+  * `PR_SET_NO_NEW_PRIVS` is set to prevent any child process from
+    re-acquiring privileges via `execve(2)`.
 * All path and process-name strings are sanitised before output to prevent
   terminal injection via crafted file names or symlink attacks.
 * The binary is compiled with `-fstack-protector-strong`, `-D_FORTIFY_SOURCE=2`,

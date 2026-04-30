@@ -23,7 +23,9 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <grp.h>
 #include <limits.h>
+#include <linux/capability.h>
 #include <poll.h>
 #include <pwd.h>
 #include <signal.h>
@@ -32,7 +34,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/fanotify.h>
+#include <sys/prctl.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <syslog.h>
 #include <time.h>
@@ -149,6 +153,112 @@ static void handle_signal(int sig)
 {
     (void)sig;
     g_running = 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Privilege dropping
+ *
+ * Called once, immediately after fanotify_init() + fanotify_mark() succeed
+ * and all privileged setup is complete.
+ *
+ * Strategy:
+ *   1. Read the invoking user's UID/GID from SUDO_UID / SUDO_GID (set by
+ *      sudo(8)).  Fall back to "nobody" (uid/gid 65534) when those vars are
+ *      absent or when their value is 0 (i.e. sudoed from root).
+ *   2. Use prctl(PR_SET_KEEPCAPS) so capabilities survive the UID change.
+ *   3. Drop supplementary groups, GID, then UID via setresgid / setresuid.
+ *   4. Reconstruct a minimal capability set:
+ *        modern mode  → keep CAP_DAC_READ_SEARCH (required by
+ *                        open_by_handle_at(2) in resolve_handle_path)
+ *        basic  mode  → drop all extra capabilities
+ *   5. Lock the process against future privilege re-acquisition via execve
+ *      using prctl(PR_SET_NO_NEW_PRIVS).
+ *
+ * Returns 0 on success, -1 on any failure (caller must abort).
+ * ---------------------------------------------------------------------- */
+static int drop_privileges(int modern_mode)
+{
+    uid_t unprivileged_uid = 65534;   /* nobody — safe default */
+    gid_t unprivileged_gid = 65534;
+    const char *s;
+    char *end;
+    unsigned long v;
+    struct __user_cap_header_struct hdr;
+    struct __user_cap_data_struct   data[2];
+    /* uid_t and gid_t are both unsigned 32-bit on Linux; UINT_MAX (0xffffffff)
+     * is therefore the largest representable value for either type. */
+    const __u32 cap_dac_read_search_mask = (1U << CAP_DAC_READ_SEARCH);
+
+    /* Use the invoking user's IDs when run via sudo, but never use root (0).
+     * strtoul returns values in [0, ULONG_MAX]; the UINT_MAX upper-bound
+     * check ensures the value fits in uid_t/gid_t (both 32-bit unsigned). */
+    if ((s = getenv("SUDO_UID")) != NULL) {
+        v = strtoul(s, &end, 10);
+        if (*end == '\0' && v > 0 && v <= UINT_MAX)
+            unprivileged_uid = (uid_t)v;
+    }
+    if ((s = getenv("SUDO_GID")) != NULL) {
+        v = strtoul(s, &end, 10);
+        if (*end == '\0' && v > 0 && v <= UINT_MAX)
+            unprivileged_gid = (gid_t)v;
+    }
+
+    /* Already not root — nothing to do */
+    if (geteuid() != 0)
+        return 0;
+
+    /* Instruct the kernel to preserve capabilities across the UID change */
+    if (prctl(PR_SET_KEEPCAPS, 1) < 0) {
+        perror("whodid: prctl(PR_SET_KEEPCAPS)");
+        return -1;
+    }
+
+    /* Drop supplementary groups.  EPERM is tolerated in rootless container
+     * environments (e.g. Docker with user namespaces) where the process
+     * lacks the privilege to call setgroups(2) even when it appears to be
+     * uid 0 inside the namespace.  In those environments, supplementary
+     * group membership is already restricted by the container runtime. */
+    if (setgroups(0, NULL) < 0 && errno != EPERM) {
+        perror("whodid: setgroups");
+        return -1;
+    }
+
+    /* Drop GID first, then UID (order matters: setresuid clears saved-set) */
+    if (setresgid(unprivileged_gid, unprivileged_gid, unprivileged_gid) < 0) {
+        perror("whodid: setresgid");
+        return -1;
+    }
+    if (setresuid(unprivileged_uid, unprivileged_uid, unprivileged_uid) < 0) {
+        perror("whodid: setresuid");
+        return -1;
+    }
+
+    /* Rebuild the capability set to the bare minimum */
+    memset(&hdr,  0, sizeof(hdr));
+    memset(data,  0, sizeof(data));
+    hdr.version = _LINUX_CAPABILITY_VERSION_3;
+    hdr.pid     = 0;
+
+    if (modern_mode) {
+        /* CAP_DAC_READ_SEARCH is required by open_by_handle_at(2). */
+        data[0].permitted   = cap_dac_read_search_mask;
+        data[0].effective   = cap_dac_read_search_mask;
+        data[0].inheritable = 0;
+    }
+    /* data[1] covers capabilities 32-63; all remain zero. */
+
+    if (syscall(SYS_capset, &hdr, data) < 0) {
+        perror("whodid: capset");
+        return -1;
+    }
+
+    /* Prevent any child exec from regaining privileges */
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0) {
+        perror("whodid: prctl(PR_SET_NO_NEW_PRIVS)");
+        return -1;
+    }
+
+    return 0;
 }
 
 /* -------------------------------------------------------------------------
@@ -612,34 +722,87 @@ static void usage(const char *prog)
     fprintf(stderr,
         "Usage: %s [OPTIONS] <path>\n"
         "\n"
-        "  Real-time file-system activity monitor.\n"
-        "  Shows which process (PID + executable) is accessing or\n"
-        "  modifying files under <path>.\n"
+        "DESCRIPTION\n"
+        "  Real-time file-system activity monitor.  For every event under\n"
+        "  <path>, whodid reports the timestamp, PID, username, full\n"
+        "  executable path, action type, and affected file — one line per\n"
+        "  event, ready for grep(1), awk(1), or tee(1).\n"
         "\n"
-        "  Requires root or CAP_SYS_ADMIN.\n"
+        "  Requires root or CAP_SYS_ADMIN (needed by fanotify_init(2)).\n"
+        "  Privileges are dropped immediately after fanotify setup.\n"
         "\n"
-        "Options:\n"
-        "  -a, --all       Show all events: OPEN, READ, CLOSE (adds noise)\n"
-        "                  Default: WRITE, CREATE, DELETE, RENAME, ATTRIB only\n"
-        "  -l, --syslog    Also write each event to the system journal via\n"
-        "                  syslog(3). View with: journalctl -t whodid\n"
-        "  -n, --no-color  Disable ANSI colors (auto-off when output is not a tty)\n"
-        "  -s, --self      Include events generated by whodid itself\n"
-        "  -q, --quiet     Suppress the startup banner\n"
-        "  -v, --version   Print version and exit\n"
-        "  -h, --help      Show this help and exit\n"
+        "OPTIONS\n"
+        "  -a, --all\n"
+        "      Report ALL events: OPEN, READ, and CLOSE in addition to the\n"
+        "      default write-side events (WRITE, MODIFY, CREATE, DELETE,\n"
+        "      RENAME, ATTRIB).  Warning: greatly increases output on busy\n"
+        "      directories.\n"
         "\n"
-        "Examples:\n"
+        "  -l, --syslog\n"
+        "      In addition to stdout, write each event to the system journal\n"
+        "      via syslog(3) with facility LOG_DAEMON, priority LOG_INFO,\n"
+        "      and tag 'whodid'.  Follow live:\n"
+        "          journalctl -t whodid -f\n"
+        "      Query by time:\n"
+        "          journalctl -t whodid --since '1 hour ago'\n"
+        "\n"
+        "  -n, --no-color\n"
+        "      Disable ANSI colour codes.  Colour is also suppressed\n"
+        "      automatically when stdout is not a terminal.\n"
+        "\n"
+        "  -s, --self\n"
+        "      Include file-system events generated by whodid itself.\n"
+        "      Suppressed by default to reduce noise.\n"
+        "\n"
+        "  -q, --quiet\n"
+        "      Suppress the startup banner and column headers.  Useful in\n"
+        "      scripts or when whodid is used as a pipeline source.\n"
+        "\n"
+        "  -v, --version\n"
+        "      Print version string and exit.\n"
+        "\n"
+        "  -h, --help\n"
+        "      Print this help and exit.\n"
+        "\n"
+        "OUTPUT FORMAT\n"
+        "  HH:MM:SS | PID | USER | PROCESS | ACTION | FILE\n"
+        "\n"
+        "  Default actions:  WRITE  MODIFY  CREATE  DELETE\n"
+        "                    MOVE_FROM  MOVE_TO  ATTRIB\n"
+        "  With -a, also:    OPEN   READ    CLOSE\n"
+        "\n"
+        "EXAMPLES\n"
+        "  # Incident response: watch /etc/ for unauthorized modifications\n"
         "  sudo whodid /etc/\n"
-        "  sudo whodid -a /var/log/\n"
-        "  sudo whodid --no-color /home/ | tee activity.log\n"
-        "  sudo whodid -q /tmp/\n"
-        "  sudo whodid --syslog /etc/   # events also appear in journalctl\n"
         "\n"
-        "Notes:\n"
+        "  # Hunt for persistence: watch cron and systemd drop-zones\n"
+        "  sudo whodid /etc/cron.d/ &\n"
+        "  sudo whodid /etc/systemd/system/ &\n"
+        "\n"
+        "  # Log to stdout and the system journal simultaneously\n"
+        "  sudo whodid --syslog /home/ | tee /var/log/whodid-home.log\n"
+        "\n"
+        "  # Filter live output to a specific process\n"
+        "  sudo whodid /var/www/ | grep nginx\n"
+        "\n"
+        "  # Query the system journal for whodid events\n"
+        "  journalctl -t whodid --since 'today' | grep DELETE\n"
+        "  grep 'whodid' /var/log/syslog | grep -v root\n"
+        "\n"
+        "  # Disable banner and colour for scripts or log pipelines\n"
+        "  sudo whodid -q -n /tmp/ | awk '{ print $0 }' >> events.log\n"
+        "\n"
+        "NOTES\n"
         "  Monitoring is at mount-point granularity; output is filtered to\n"
-        "  files under <path>.  Full CREATE/DELETE/RENAME reporting needs\n"
-        "  kernel >= 5.1 (Debian 11+, WSL2).\n",
+        "  the given path prefix in user-space.\n"
+        "\n"
+        "  Full CREATE/DELETE/RENAME/ATTRIB reporting requires Linux\n"
+        "  kernel >= 5.1 (Debian 11 Bullseye, Ubuntu 20.10, RHEL 9, or\n"
+        "  WSL2 after: wsl --update).\n"
+        "\n"
+        "  In modern mode (kernel >= 5.1) CAP_DAC_READ_SEARCH is retained\n"
+        "  after setup for file-handle resolution; all other capabilities\n"
+        "  and the root UID/GID are relinquished.\n",
         prog);
 }
 
@@ -853,6 +1016,19 @@ int main(int argc, char *argv[])
         sigaction(SIGINT,  &sa, NULL);
         sigaction(SIGTERM, &sa, NULL);
         sigaction(SIGHUP,  &sa, NULL);
+    }
+
+    /* ---- Drop elevated privileges ----
+     *
+     * All privileged setup (fanotify_init, fanotify_mark, open g_mount_fd)
+     * is complete.  Shed root now to minimise the attack surface for the
+     * duration of monitoring.  In modern mode we retain only
+     * CAP_DAC_READ_SEARCH for open_by_handle_at(2); in basic mode all
+     * extra capabilities are relinquished entirely.
+     */
+    if (drop_privileges(g_modern_mode) < 0) {
+        fprintf(stderr, "whodid: error: failed to drop privileges — aborting\n");
+        goto cleanup_fail;
     }
 
     print_banner(g_filter_path, g_modern_mode);
