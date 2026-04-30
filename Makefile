@@ -28,12 +28,18 @@ install: $(TARGET)
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
 	@echo "Installed: $(DESTDIR)$(BINDIR)/$(TARGET)"
+	install -d $(DESTDIR)$(MAN1DIR)
+	install -m 644 whodid.1 $(DESTDIR)$(MAN1DIR)/whodid.1
+	@echo "Installed: $(DESTDIR)$(MAN1DIR)/whodid.1"
 	@echo ""
 	@echo "Usage:  sudo whodid /path/to/watch"
+	@echo "Manual: man whodid"
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/$(TARGET)
 	@echo "Uninstalled: $(DESTDIR)$(BINDIR)/$(TARGET)"
+	rm -f $(DESTDIR)$(MAN1DIR)/whodid.1
+	@echo "Uninstalled: $(DESTDIR)$(MAN1DIR)/whodid.1"
 
 clean:
 	rm -f $(TARGET)
