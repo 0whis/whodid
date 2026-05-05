@@ -120,6 +120,97 @@ sudo dpkg -r whodid        # remove binary + man page
 sudo dpkg -P whodid        # purge (same as -r for this package)
 ```
 
+### .rpm package (Fedora / RHEL / CentOS / openSUSE)
+
+Build and install a native `.rpm` package:
+
+```bash
+git clone https://github.com/0whis/whodid.git
+cd whodid
+./build-rpm.sh                          # produces whodid-1.0.0-1.<arch>.rpm
+sudo dnf install whodid-1.0.0-*.rpm     # Fedora / RHEL / CentOS
+# or
+sudo yum install whodid-1.0.0-*.rpm     # older RHEL / CentOS
+```
+
+Or with the Makefile shortcut:
+
+```bash
+make rpm
+sudo dnf install whodid-1.0.0-*.rpm
+```
+
+Requires `rpm-build`:
+
+```bash
+sudo dnf install -y rpm-build gcc make
+```
+
+Remove the package:
+
+```bash
+sudo rpm -e whodid
+```
+
+### AppImage (universal Linux)
+
+Build a self-contained AppImage that runs on any modern Linux distribution
+without installation:
+
+```bash
+git clone https://github.com/0whis/whodid.git
+cd whodid
+./build-appimage.sh                     # produces whodid-1.0.0-<arch>.AppImage
+chmod +x whodid-1.0.0-*.AppImage
+sudo ./whodid-1.0.0-*.AppImage /etc/
+```
+
+Or with the Makefile shortcut:
+
+```bash
+make appimage
+```
+
+`appimagetool` is downloaded automatically if not found in `PATH`.  
+In containers or environments without FUSE, prefix with:
+
+```bash
+APPIMAGE_EXTRACT_AND_RUN=1 sudo ./whodid-1.0.0-*.AppImage /etc/
+```
+
+### AUR package (Arch Linux)
+
+Build a native `.pkg.tar.zst` package from local sources:
+
+```bash
+git clone https://github.com/0whis/whodid.git
+cd whodid
+./build-aur.sh                          # produces whodid-1.0.0-1-<arch>.pkg.tar.zst
+sudo pacman -U whodid-1.0.0-*.pkg.tar.zst
+```
+
+Or with the Makefile shortcut:
+
+```bash
+make aur
+```
+
+Requires `base-devel`:
+
+```bash
+sudo pacman -S --needed base-devel
+```
+
+Remove the package:
+
+```bash
+sudo pacman -R whodid
+```
+
+> **AUR submission note:** to publish on AUR, adapt the generated `PKGBUILD`
+> to fetch a tagged GitHub release tarball and run
+> `makepkg --printsrcinfo > .SRCINFO` before pushing.
+
 ### Manual build
 
 ```bash

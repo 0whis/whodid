@@ -16,7 +16,7 @@ PREFIX  := /usr/local
 BINDIR  := $(PREFIX)/bin
 MAN1DIR := $(PREFIX)/share/man/man1
 
-.PHONY: all clean install uninstall deb
+.PHONY: all clean install uninstall deb rpm appimage aur
 
 all: $(TARGET)
 
@@ -43,6 +43,15 @@ uninstall:
 
 deb: $(SRC)
 	@bash build-deb.sh
+
+rpm: $(SRC)
+	@bash build-rpm.sh
+
+appimage: $(SRC)
+	@bash build-appimage.sh
+
+aur: $(SRC)
+	@bash build-aur.sh
 
 clean:
 	rm -f $(TARGET)
