@@ -16,7 +16,7 @@ PREFIX  := /usr/local
 BINDIR  := $(PREFIX)/bin
 MAN1DIR := $(PREFIX)/share/man/man1
 
-.PHONY: all clean install uninstall
+.PHONY: all clean install uninstall deb
 
 all: $(TARGET)
 
@@ -40,6 +40,9 @@ uninstall:
 	@echo "Uninstalled: $(DESTDIR)$(BINDIR)/$(TARGET)"
 	rm -f $(DESTDIR)$(MAN1DIR)/whodid.1
 	@echo "Uninstalled: $(DESTDIR)$(MAN1DIR)/whodid.1"
+
+deb: $(SRC)
+	@bash build-deb.sh
 
 clean:
 	rm -f $(TARGET)

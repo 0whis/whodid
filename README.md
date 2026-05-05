@@ -95,6 +95,31 @@ The script checks and installs build dependencies (`gcc`, `make`, `libc6-dev`),
 verifies the kernel version, compiles the binary, and copies it to
 `/usr/local/bin/whodid`.
 
+### .deb package (Debian / Ubuntu)
+
+Build and install a native `.deb` package:
+
+```bash
+git clone https://github.com/0whis/whodid.git
+cd whodid
+./build-deb.sh                          # produces whodid_1.0.0_<arch>.deb
+sudo dpkg -i whodid_1.0.0_*.deb
+```
+
+Or with the Makefile shortcut:
+
+```bash
+make deb
+sudo dpkg -i whodid_1.0.0_*.deb
+```
+
+Uninstall the package:
+
+```bash
+sudo dpkg -r whodid        # remove binary + man page
+sudo dpkg -P whodid        # purge (same as -r for this package)
+```
+
 ### Manual build
 
 ```bash
