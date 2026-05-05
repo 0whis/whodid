@@ -58,9 +58,10 @@ MAN1DIR="${PREFIX}/share/man/man1"
 
 # ---- check build tools -----------------------------------------------------
 echo "► Checking build tools..."
+declare -A RPM_TOOL_PKG=( [gcc]="gcc" [make]="make" [rpmbuild]="rpm-build" )
 for tool in gcc make rpmbuild; do
     command -v "${tool}" &>/dev/null || \
-        die "'${tool}' is not installed. Install with: sudo dnf install -y rpm-build gcc make"
+        die "'${tool}' not found (provided by '${RPM_TOOL_PKG[${tool}]}'). Install with: sudo dnf install -y rpm-build gcc make"
 done
 green "  All build tools found."
 

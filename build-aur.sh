@@ -107,6 +107,8 @@ EOF
 
 # ---- build package ---------------------------------------------------------
 echo "► Building Arch package with makepkg..."
+# --nodeps: gcc and make were already verified above; PKGBUILD makedepends
+# are not installed as proper packages in this local build flow.
 (cd "${BUILD_DIR}" && makepkg --nodeps --noconfirm)
 
 PKG_FILE="$(find "${BUILD_DIR}" -name "*.pkg.tar.*" | head -1)"

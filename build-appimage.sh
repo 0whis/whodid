@@ -95,12 +95,12 @@ install -m 755 "${SCRIPT_DIR}/${PACKAGE}"   "${APPDIR}/usr/bin/${PACKAGE}"
 install -m 644 "${SCRIPT_DIR}/${PACKAGE}.1" "${APPDIR}/usr/share/man/man1/${PACKAGE}.1"
 
 # ---- AppRun ----------------------------------------------------------------
-cat > "${APPDIR}/AppRun" <<'EOF'
+cat > "${APPDIR}/AppRun" <<EOF
 #!/bin/sh
-SELF="$(readlink -f "$0")"
-HERE="${SELF%/*}"
-export PATH="${HERE}/usr/bin:${PATH}"
-exec "${HERE}/usr/bin/whodid" "$@"
+SELF="\$(readlink -f "\$0")"
+HERE="\${SELF%/*}"
+export PATH="\${HERE}/usr/bin:\${PATH}"
+exec "\${HERE}/usr/bin/${PACKAGE}" "\$@"
 EOF
 chmod 755 "${APPDIR}/AppRun"
 
