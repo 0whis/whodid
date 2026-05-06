@@ -16,7 +16,7 @@ PREFIX  := /usr/local
 BINDIR  := $(PREFIX)/bin
 MAN1DIR := $(PREFIX)/share/man/man1
 
-.PHONY: all clean install uninstall deb rpm appimage aur
+.PHONY: all clean install uninstall deb rpm appimage aur sign verify
 
 all: $(TARGET)
 
@@ -52,6 +52,15 @@ appimage: $(SRC)
 
 aur: $(SRC)
 	@bash build-aur.sh
+
+sign: $(TARGET)
+	@if ! command -v gpg >/dev/null 2>&1; then echo "gpg not found"; exit 1; fi
+	@echo "► Signing $(TARGET) with GPG..."
+	gpg --detach-sign --armor $(TARGET)
+	@echo "  Signature: $(TARGET).asc"
+
+verify: $(TARGET)
+	@bash verify.sh $(TARGET)
 
 clean:
 	rm -f $(TARGET)
