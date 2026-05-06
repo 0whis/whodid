@@ -90,6 +90,7 @@ trap 'rm -rf "${GNUPGHOME}"' EXIT
 gpg --batch --quiet --import "${KEYFILE}"
 FINGERPRINT="$(gpg --with-colons --list-keys 2>/dev/null \
     | awk -F: '/^fpr/{print $10; exit}')"
+[[ -n "${FINGERPRINT}" ]] || die "Failed to extract key fingerprint — key import may have failed."
 bold "Signing key fingerprint:  ${FINGERPRINT}"
 
 # ---- verify each artifact --------------------------------------------------

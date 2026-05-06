@@ -105,22 +105,22 @@ All packages attached to a release are signed with a detached GPG signature
 (`.asc` file) and covered by the `SHA256SUMS` manifest.
 
 ```bash
-# Download the release assets (package, its .asc, SHA256SUMS, and the public key)
-curl -sSLO https://github.com/0whis/whodid/releases/latest/download/whodid_1.0.0_amd64.deb
-curl -sSLO https://github.com/0whis/whodid/releases/latest/download/whodid_1.0.0_amd64.deb.asc
+# Download the release assets (replace <version> and <arch> as appropriate)
+curl -sSLO https://github.com/0whis/whodid/releases/latest/download/whodid_<version>_<arch>.deb
+curl -sSLO https://github.com/0whis/whodid/releases/latest/download/whodid_<version>_<arch>.deb.asc
 curl -sSLO https://github.com/0whis/whodid/releases/latest/download/SHA256SUMS
 curl -sSLO https://github.com/0whis/whodid/releases/latest/download/signing-key.pub.asc
 
 # Verify (uses verify.sh from the repository)
 chmod +x verify.sh
-./verify.sh --key signing-key.pub.asc whodid_1.0.0_amd64.deb
+./verify.sh --key signing-key.pub.asc whodid_<version>_<arch>.deb
 ```
 
 Or verify manually with GPG and sha256sum:
 
 ```bash
 gpg --import signing-key.pub.asc
-gpg --verify whodid_1.0.0_amd64.deb.asc whodid_1.0.0_amd64.deb
+gpg --verify whodid_<version>_<arch>.deb.asc whodid_<version>_<arch>.deb
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 
