@@ -1,5 +1,8 @@
 # whodid
 
+[![CI](https://github.com/0whis/whodid/actions/workflows/ci.yml/badge.svg)](https://github.com/0whis/whodid/actions/workflows/ci.yml)
+[![Release](https://github.com/0whis/whodid/actions/workflows/release.yml/badge.svg)](https://github.com/0whis/whodid/releases/latest)
+
 > **Real-time file-system activity monitor** — see exactly which process
 > touched your file, right now.
 
@@ -82,7 +85,48 @@ gap using the Linux **`fanotify`** kernel API:
 
 ## Installation
 
-### Quick install (Debian / Ubuntu / WSL2)
+### Pre-built packages (recommended)
+
+Every [GitHub Release](../../releases/latest) ships ready-to-install packages
+built by CI — no compiler needed.  Each artifact is GPG-signed and
+SHA-256 checksummed.  See [**Verifying signatures**](#verifying-signatures)
+below.
+
+| Package | Target distribution | Install command |
+|---------|---------------------|-----------------|
+| `whodid_<ver>_<arch>.deb` | Debian, Ubuntu, Raspbian | `sudo dpkg -i whodid_*.deb` |
+| `whodid-<ver>-1.<arch>.rpm` | Fedora, RHEL, CentOS, openSUSE | `sudo dnf install whodid-*.rpm` |
+| `whodid-<ver>-<arch>.AppImage` | Any modern Linux (no install) | `chmod +x whodid-*.AppImage && sudo ./whodid-*.AppImage /path` |
+| `PKGBUILD` + `.SRCINFO` | Arch Linux (AUR) | see [AUR section](#aur-package-arch-linux) below |
+
+### Verifying signatures
+
+All packages attached to a release are signed with a detached GPG signature
+(`.asc` file) and covered by the `SHA256SUMS` manifest.
+
+```bash
+# Download the release assets (package, its .asc, SHA256SUMS, and the public key)
+curl -sSLO https://github.com/0whis/whodid/releases/latest/download/whodid_1.0.0_amd64.deb
+curl -sSLO https://github.com/0whis/whodid/releases/latest/download/whodid_1.0.0_amd64.deb.asc
+curl -sSLO https://github.com/0whis/whodid/releases/latest/download/SHA256SUMS
+curl -sSLO https://github.com/0whis/whodid/releases/latest/download/signing-key.pub.asc
+
+# Verify (uses verify.sh from the repository)
+chmod +x verify.sh
+./verify.sh --key signing-key.pub.asc whodid_1.0.0_amd64.deb
+```
+
+Or verify manually with GPG and sha256sum:
+
+```bash
+gpg --import signing-key.pub.asc
+gpg --verify whodid_1.0.0_amd64.deb.asc whodid_1.0.0_amd64.deb
+sha256sum --check --ignore-missing SHA256SUMS
+```
+
+---
+
+### Quick install (Debian / Ubuntu / WSL2 — build from source)
 
 ```bash
 git clone https://github.com/0whis/whodid.git
@@ -97,7 +141,9 @@ verifies the kernel version, compiles the binary, and copies it to
 
 ### .deb package (Debian / Ubuntu)
 
-Build and install a native `.deb` package:
+**Option A — download the pre-built package** (see [Pre-built packages](#pre-built-packages-recommended) above).
+
+**Option B — build locally from source:**
 
 ```bash
 git clone https://github.com/0whis/whodid.git
@@ -122,7 +168,9 @@ sudo dpkg -P whodid        # purge (same as -r for this package)
 
 ### .rpm package (Fedora / RHEL / CentOS / openSUSE)
 
-Build and install a native `.rpm` package:
+**Option A — download the pre-built package** (see [Pre-built packages](#pre-built-packages-recommended) above).
+
+**Option B — build locally from source:**
 
 ```bash
 git clone https://github.com/0whis/whodid.git
@@ -154,8 +202,9 @@ sudo rpm -e whodid
 
 ### AppImage (universal Linux)
 
-Build a self-contained AppImage that runs on any modern Linux distribution
-without installation:
+**Option A — download the pre-built AppImage** (see [Pre-built packages](#pre-built-packages-recommended) above).
+
+**Option B — build locally from source:**
 
 ```bash
 git clone https://github.com/0whis/whodid.git
@@ -180,19 +229,25 @@ APPIMAGE_EXTRACT_AND_RUN=1 sudo ./whodid-1.0.0-*.AppImage /etc/
 
 ### AUR package (Arch Linux)
 
-Build a native `.pkg.tar.zst` package from local sources:
+Each release ships a ready-to-use `PKGBUILD` and `.SRCINFO` that reference
+the tagged GitHub source tarball.
+
+```bash
+# Download the PKGBUILD from the release
+curl -sSLO https://github.com/0whis/whodid/releases/latest/download/PKGBUILD
+curl -sSLO https://github.com/0whis/whodid/releases/latest/download/.SRCINFO
+
+# Build and install
+makepkg -si
+```
+
+Or build a local package from source:
 
 ```bash
 git clone https://github.com/0whis/whodid.git
 cd whodid
 ./build-aur.sh                          # produces whodid-1.0.0-1-<arch>.pkg.tar.zst
 sudo pacman -U whodid-1.0.0-*.pkg.tar.zst
-```
-
-Or with the Makefile shortcut:
-
-```bash
-make aur
 ```
 
 Requires `base-devel`:
@@ -206,10 +261,6 @@ Remove the package:
 ```bash
 sudo pacman -R whodid
 ```
-
-> **AUR submission note:** to publish on AUR, adapt the generated `PKGBUILD`
-> to fetch a tagged GitHub release tarball and run
-> `makepkg --printsrcinfo > .SRCINFO` before pushing.
 
 ### Manual build
 
