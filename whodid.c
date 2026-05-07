@@ -61,9 +61,6 @@
 #ifndef FAN_DELETE
 # define FAN_DELETE          0x00000200U
 #endif
-#ifndef FAN_REPORT_FID
-# define FAN_REPORT_FID      0x00000200U   /* fanotify_init flag */
-#endif
 #ifndef FAN_REPORT_DIR_FID
 # define FAN_REPORT_DIR_FID  0x00000400U
 #endif
