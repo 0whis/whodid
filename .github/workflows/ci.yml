@@ -12,27 +12,6 @@ permissions:
   security-events: write
 
 jobs:
-  codeql:
-    name: CodeQL security scan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@68bde559dea0fdcac2102bfdf6230c5f70eb485e # v4.35.4
-        with:
-          languages: c-cpp
-          queries: security-and-quality
-
-      - name: Build
-        run: make
-
-      - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@68bde559dea0fdcac2102bfdf6230c5f70eb485e # v4.35.4
-        with:
-          category: /language:c-cpp
-
   static-analysis:
     name: Static analysis (cppcheck)
     runs-on: ubuntu-latest

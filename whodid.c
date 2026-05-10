@@ -230,6 +230,12 @@ static int drop_privileges(int modern_mode)
         return -1;
     }
 
+    /* Verify the privilege drop actually took effect */
+    if (getegid() != unprivileged_gid || geteuid() != unprivileged_uid) {
+        fprintf(stderr, "whodid: privilege drop failed — unexpected UID/GID\n");
+        return -1;
+    }
+
     /* Rebuild the capability set to the bare minimum */
     memset(&hdr,  0, sizeof(hdr));
     memset(data,  0, sizeof(data));
@@ -545,10 +551,11 @@ static void process_event_modern(struct fanotify_event_metadata *meta)
 
             if (info_hdr->info_type == FAN_EVENT_INFO_TYPE_DFID_NAME) {
                 /* The file name immediately follows the file_handle data */
-                char  *name        = (char *)fid->handle + fh_total;
                 size_t name_offset = fid_hdr_sz + fh_total;
 
                 if (name_offset < info_hdr->len) {
+                    /* Compute pointer only after the bounds check */
+                    char  *name     = (char *)fid->handle + fh_total;
                     size_t name_max = info_hdr->len - name_offset;
                     char   safe_name[NAME_MAX + 1];
                     size_t copy_len = (name_max < sizeof(safe_name))

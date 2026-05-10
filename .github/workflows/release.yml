@@ -171,20 +171,21 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           SHA256="${{ steps.sha256.outputs.sha256 }}"
           TARBALL_URL="${{ steps.sha256.outputs.tarball_url }}"
+          TAB="$(printf '\t')"
           cat > .SRCINFO <<EOF
           pkgbase = whodid
-          	pkgdesc = Real-time file-system activity monitor (fanotify-based, shows PID + process per event)
-          	pkgver = ${VERSION}
-          	pkgrel = 1
-          	url = https://github.com/${{ github.repository }}
-          	arch = x86_64
-          	arch = aarch64
-          	arch = armv7h
-          	license = custom
-          	makedepends = gcc
-          	makedepends = make
-          	source = whodid-${VERSION}.tar.gz::${TARBALL_URL}
-          	sha256sums = ${SHA256}
+          ${TAB}pkgdesc = Real-time file-system activity monitor (fanotify-based, shows PID + process per event)
+          ${TAB}pkgver = ${VERSION}
+          ${TAB}pkgrel = 1
+          ${TAB}url = https://github.com/${{ github.repository }}
+          ${TAB}arch = x86_64
+          ${TAB}arch = aarch64
+          ${TAB}arch = armv7h
+          ${TAB}license = custom
+          ${TAB}makedepends = gcc
+          ${TAB}makedepends = make
+          ${TAB}source = whodid-${VERSION}.tar.gz::${TARBALL_URL}
+          ${TAB}sha256sums = ${SHA256}
 
           pkgname = whodid
           EOF
